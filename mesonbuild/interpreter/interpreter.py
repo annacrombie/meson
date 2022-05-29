@@ -3196,3 +3196,43 @@ This will become a hard error in the future.''', location=self.current_node)
         if step < 1:
             raise InterpreterException('step must be >=1')
         return P_OBJ.RangeHolder(start, stop, step, subproject=self.subproject)
+
+
+def get_types():
+    import typing
+
+    import argparse
+
+    from typing_extensions import Literal
+
+    from . import kwargs
+    from ..backend.backends import Backend
+    from ..interpreterbase.baseobjects import InterpreterObject, TYPE_var, TYPE_kwargs, MesonInterpreterObject
+    from ..programs import OverrideProgram
+    from ..mesonlib import File
+
+    # Input source types passed to Targets
+    SourceInputs = T.Union[mesonlib.File, build.GeneratedList, build.BuildTarget, build.BothLibraries,
+                           build.CustomTargetIndex, build.CustomTarget, build.GeneratedList,
+                           build.ExtractedObjects, str]
+    # Input source types passed to the build.Target classes
+    SourceOutputs = T.Union[mesonlib.File, build.GeneratedList,
+                            build.BuildTarget, build.CustomTargetIndex, build.CustomTarget,
+                            build.ExtractedObjects, build.GeneratedList, build.StructuredSources]
+
+    class Dummy(Interpreter):
+        def __init__(self):
+            self.funcs = {}
+
+    dummy_interpreter = Dummy()
+    dummy_interpreter.build_func_dict()
+
+    ret = []
+    for f in dummy_interpreter.funcs:
+        ret.append([
+            f,
+            typing.get_type_hints(dummy_interpreter.funcs[f], globals(), locals()),
+            dummy_interpreter.funcs[f]
+        ])
+
+    return ret

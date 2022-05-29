@@ -451,6 +451,7 @@ class KwargInfo(T.Generic[_T]):
             convertor=convertor if not isinstance(convertor, _NULL_T) else self.convertor,
         )
 
+typed_kwargs_map = {}
 
 def typed_kwargs(name: str, *types: KwargInfo) -> T.Callable[..., T.Any]:
     """Decorator for type checking keyword arguments.
@@ -467,6 +468,9 @@ def typed_kwargs(name: str, *types: KwargInfo) -> T.Callable[..., T.Any]:
         (if applicable)
     :param *types: KwargInfo entries for each keyword argument.
     """
+
+    typed_kwargs_map[name] = types
+
     def inner(f: TV_func) -> TV_func:
 
         def types_description(types_tuple: T.Tuple[T.Union[T.Type, ContainerTypeInfo], ...]) -> str:
