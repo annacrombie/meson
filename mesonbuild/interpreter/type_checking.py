@@ -33,6 +33,17 @@ def in_set_validator(choices: T.Set[str]) -> T.Callable[[str], T.Optional[str]]:
 
     return inner
 
+def install_dir_validator(x):
+    return 'must be `false` if boolean' if x is True else None
+
+def path_not_absolute_validator(x):
+    return 'cannot be absolute' if any(os.path.isabs(d) for d in x) else None
+
+def list_flatten_one_converter(x):
+    return x[0] if isinstance(x, list) else x
+
+def object_has_found_method_validator(a):
+    return 'Objects must have a found() method' if not all(hasattr(x, 'found') for x in a) else None
 
 def _language_validator(l: T.List[str]) -> T.Optional[str]:
     """Validate language keyword argument.

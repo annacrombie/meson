@@ -75,6 +75,10 @@ from .type_checking import (
     REQUIRED_KW,
     NoneType,
     in_set_validator,
+    install_dir_validator,
+    path_not_absolute_validator,
+    list_flatten_one_converter,
+    object_has_found_method_validator,
     env_convertor_with_method
 )
 from . import primitives as P_OBJ
@@ -1103,7 +1107,7 @@ external dependencies (including libraries) must go to "dependencies".''')
             (str, mesonlib.File, NoneType, list),
             default='undefined',
             validator=_project_version_validator,
-            convertor=lambda x: x[0] if isinstance(x, list) else x,
+            convertor=list_flatten_one_converter
         ),
         KwargInfo('license', ContainerTypeInfo(list, str), default=['unknown'], listify=True),
         KwargInfo('subproject_dir', str, default='subprojects'),
@@ -2189,7 +2193,7 @@ external dependencies (including libraries) must go to "dependencies".''')
         KwargInfo(
             'if_found',
             ContainerTypeInfo(list, object),
-            validator=lambda a: 'Objects must have a found() method' if not all(hasattr(x, 'found') for x in a) else None,
+            validator=object_has_found_method_validator,
             since='0.44.0',
             default=[],
             listify=True,
@@ -2310,10 +2314,10 @@ external dependencies (including libraries) must go to "dependencies".''')
         KwargInfo('strip_directory', bool, default=False),
         KwargInfo('exclude_files', ContainerTypeInfo(list, str),
                   default=[], listify=True, since='0.42.0',
-                  validator=lambda x: 'cannot be absolute' if any(os.path.isabs(d) for d in x) else None),
+                  validator=path_not_absolute_validator),
         KwargInfo('exclude_directories', ContainerTypeInfo(list, str),
                   default=[], listify=True, since='0.42.0',
-                  validator=lambda x: 'cannot be absolute' if any(os.path.isabs(d) for d in x) else None),
+                  validator=path_not_absolute_validator),
         INSTALL_MODE_KW.evolve(since='0.38.0'),
         INSTALL_TAG_KW.evolve(since='0.60.0'),
     )
@@ -2361,7 +2365,7 @@ external dependencies (including libraries) must go to "dependencies".''')
         # Cannot use shared implementation until None backwards compat is dropped
         KwargInfo('install', (bool, NoneType), since='0.50.0'),
         KwargInfo('install_dir', (str, bool), default='',
-                  validator=lambda x: 'must be `false` if boolean' if x is True else None),
+                  validator=install_dir_validator),
         KwargInfo('output', str, required=True),
         KwargInfo('output_format', str, default='c', since='0.47.0',
                   validator=in_set_validator({'c', 'nasm'})),
