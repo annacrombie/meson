@@ -21,44 +21,6 @@ class GeneratorTypes(GeneratorBase):
         self.out = out
         self.enable_modules = enable_modules
 
-    # def generate_function_signature(
-    #     self, f: Function, o: Object = None
-    # ) -> None:
-    #     args = []
-
-    #     if f.posargs:
-    #         args += [arg.name for arg in f.posargs]
-
-    #     if f.varargs:
-    #         args += [f.varargs.name + "..."]
-
-    #     if f.optargs:
-    #         args += [f"[{arg.name}]" for arg in f.optargs]
-
-    #     for kwarg in self.sorted_and_filtered(list(f.kwargs.values())):
-    #         kw = kwarg.name + ":"
-    #         if kwarg.default:
-    #             kw += " " + ManPage.bold(kwarg.default)
-    #         args += [kw]
-
-    #     ret = ManPage.italic(f.returns.raw) + " "
-
-    #     prefix = f"{ret}{self.function_name(f, o)}("
-    #     sig = ", ".join(args)
-    #     suffix = ")"
-
-    #     if len(prefix) + len(sig) + len(suffix) > 70:
-    #         page.line(prefix)
-    #         page.br()
-    #         page.indent()
-    #         for arg in args:
-    #             page.line(arg + ",")
-    #             page.br()
-    #         page.unindent()
-    #         page.line(suffix)
-    #     else:
-    #         page.line(prefix + sig + suffix)
-
     def _parse_type(self, t, in_container=False):
         parsed = []
         name = ""
@@ -111,14 +73,36 @@ class GeneratorTypes(GeneratorBase):
         else:
             return t
 
+    def print_types(self, args):
+        args = [args] if not isinstance(args, list) else args
+
+        for arg in args:
+            t = self.assemble_type(self.parse_type(arg.type.raw))
+            print(f"    {t}")
+
 
     def generate_function(self, f: Function):
         print(f.name)
-        for kwarg in self.sorted_and_filtered(list(f.kwargs.values())):
+        if f.posargs:
+            print('  posargs:')
+            self.print_types(f.posargs)
+
+        if f.varargs:
+            print('  varargs:')
+            self.print_types(f.varargs)
+
+        if f.optargs:
+            print('  optargs:')
+            self.print_types(f.optargs)
+
+        kwargs = self.sorted_and_filtered(list(f.kwargs.values()))
+        if kwargs:
+            print('  kwargs:')
+        for kwarg in kwargs:
             k = kwarg.name
             # print(f"parsing {kwarg.type.raw}")
             t = self.assemble_type(self.parse_type(kwarg.type.raw))
-            print(f"  {k}: {t}")
+            print(f"    {k}: {t}")
 
     def generate(self):
         for f in self.sorted_and_filtered(self.functions):

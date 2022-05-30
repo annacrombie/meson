@@ -159,6 +159,7 @@ def unary_operator(operator: MesonOperator) -> T.Callable[['_TV_FN_Operator'], '
         return T.cast('_TV_FN_Operator', wrapper)
     return inner
 
+typed_pos_args_map = {}
 
 def typed_pos_args(name: str, *types: T.Union[T.Type, T.Tuple[T.Type, ...]],
                    varargs: T.Optional[T.Union[T.Type, T.Tuple[T.Type, ...]]] = None,
@@ -208,6 +209,14 @@ def typed_pos_args(name: str, *types: T.Union[T.Type, T.Tuple[T.Type, ...]],
     correct, all of the arguments are string names of files. If the first
     argument is something else the it should be separated.
     """
+
+    typed_pos_args_map[name] = {
+        'posargs': types,
+        'varargs': varargs,
+        'optargs': optargs,
+        # 'min_varargs': min_varargs,
+    }
+
     def inner(f: TV_func) -> TV_func:
 
         @wraps(f)
