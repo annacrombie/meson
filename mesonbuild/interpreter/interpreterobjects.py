@@ -41,6 +41,8 @@ if T.TYPE_CHECKING:
 
         separator: str
 
+def length_2_or_empty_validator(x):
+    return 'must be of length 2 or empty' if len(x) not in {0, 2} else None,
 
 def extract_required_kwarg(kwargs: 'kwargs.ExtractRequired',
                            subproject: 'SubProject',
@@ -448,7 +450,7 @@ class DependencyHolder(ObjectHolder[Dependency]):
             ContainerTypeInfo(list, str, pairs=True),
             default=[],
             listify=True,
-            validator=lambda x: 'must be of length 2 or empty' if len(x) not in {0, 2} else None,
+            validator=length_2_or_empty_validator
         ),
     )
     def pkgconfig_method(self, args: T.Tuple[str], kwargs: 'kwargs.DependencyPkgConfigVar') -> str:
