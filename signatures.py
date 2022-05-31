@@ -1,5 +1,8 @@
 from mesonbuild import interpreter
 from mesonbuild.interpreter import kwargs
+from mesonbuild.interpreter import interpreterobjects as OBJ
+from mesonbuild.interpreter.mesonmain import MesonMain
+from mesonbuild.interpreter.interpreter import Interpreter
 import mesonbuild
 from typing_extensions import TypedDict, Literal, Protocol
 import typing
@@ -11,6 +14,108 @@ import inspect
 
 untyped_posargs = []
 untyped_kwargs = []
+
+def get_type_annotations(func):
+    T = typing
+
+    import argparse
+
+    from typing_extensions import Literal
+
+    from mesonbuild.interpreter.kwargs import ExtractRequired, ExtractSearchDirs
+
+    from mesonbuild.compilers.compilers import RunResult
+
+    from mesonbuild.backend.backends import Backend
+    from mesonbuild.interpreterbase.baseobjects import InterpreterObject, TYPE_var, TYPE_kwargs, MesonInterpreterObject
+    from mesonbuild.interpreterbase import Disabler, TYPE_nvar, TYPE_nkwargs
+    from mesonbuild.interpreter import primitives as P_OBJ
+    from mesonbuild.interpreter.interpreterobjects import (
+        SubprojectHolder,
+        Test,
+        RunProcess,
+        extract_required_kwarg,
+        extract_search_dirs,
+        NullSubprojectInterpreter,
+    )
+    from mesonbuild.programs import OverrideProgram, ExternalProgram
+    from mesonbuild.mesonlib import File
+    from mesonbuild.modules import ExtensionModule, NewExtensionModule, NotFoundExtensionModule
+    from mesonbuild import mesonlib, build, mparser, dependencies, coredata, compilers
+    from mesonbuild.compilers import Compiler
+    from mesonbuild.dependencies import Dependency
+    from mesonbuild.build import CustomTarget, CustomTargetIndex, GeneratedList
+    from mesonbuild.modules import ModuleState
+
+    mesonbuild.build.GeneratedTypes = T.Union['CustomTarget', 'CustomTargetIndex', 'GeneratedList']
+
+    class EnvironmentSeparatorKW(TypedDict):
+        separator: str
+
+    class FuncOverrideDependency(TypedDict):
+        native: mesonlib.MachineChoice
+        static: T.Optional[bool]
+
+    class AddInstallScriptKW(TypedDict):
+        skip_if_destdir: bool
+        install_tag: str
+
+    class NativeKW(TypedDict):
+        native: mesonlib.MachineChoice
+
+    class AddDevenvKW(TypedDict):
+        method: Literal['set', 'prepend', 'append']
+        separator: str
+
+    class GetSupportedArgumentKw(TypedDict):
+        checked: Literal['warn', 'require', 'off']
+
+    class AlignmentKw(TypedDict):
+        from mesonbuild import dependencies
+        prefix: str
+        args: T.List[str]
+        dependencies: T.List[dependencies.Dependency]
+
+    class CompileKW(TypedDict):
+        from mesonbuild import dependencies
+        name: str
+        no_builtin_args: bool
+        include_directories: T.List[build.IncludeDirs]
+        args: T.List[str]
+        dependencies: T.List[dependencies.Dependency]
+
+    class CommonKW(TypedDict):
+        from mesonbuild import dependencies
+        prefix: str
+        no_builtin_args: bool
+        include_directories: T.List[build.IncludeDirs]
+        args: T.List[str]
+        dependencies: T.List[dependencies.Dependency]
+
+    class CompupteIntKW(CommonKW):
+        guess: T.Optional[int]
+        high: T.Optional[int]
+        low: T.Optional[int]
+
+    class HeaderKW(CommonKW, ExtractRequired):
+        pass
+
+    class FindLibraryKW(ExtractRequired, ExtractSearchDirs):
+        from mesonbuild import dependencies
+        disabler: bool
+        has_headers: T.List[str]
+        static: bool
+
+        # This list must be all of the `HeaderKW` values with `header_`
+        # prepended to the key
+        header_args: T.List[str]
+        header_dependencies: T.List[dependencies.Dependency]
+        header_include_directories: T.List[build.IncludeDirs]
+        header_no_builtin_args: bool
+        header_prefix: str
+        header_required: T.Union[bool, coredata.UserFeatureOption]
+
+    return typing.get_type_hints(func, globals(), locals())
 
 def get_decorators(target):
     decorators = []
@@ -53,7 +158,7 @@ MESON_OBJECTS_TO_TYPE = {
     mesonbuild.build.Target: 'tgt',
     mesonbuild.build.Executable: 'exe',
     mesonbuild.build.CustomTarget: 'custom_tgt',
-    mesonbuild.build.CustomTargetIndex: 'custom_tgt_idx',
+    mesonbuild.build.CustomTargetIndex: 'custom_idx',
     mesonbuild.programs.ExternalProgram: 'external_program',
     mesonbuild.build.ExtractedObjects: 'extracted_obj',
     mesonbuild.build.GeneratedList: 'generated_list',
@@ -65,54 +170,86 @@ MESON_OBJECTS_TO_TYPE = {
     mesonbuild.compilers.compilers.Compiler: 'compiler',
     kwargs._FoundProto: 'dep', # really, this means anything that responds to .found() I think.
     mesonbuild.dependencies.base.Dependency: 'dep',
-    mesonbuild.build.IncludeDirs: 'include_dirs',
+    mesonbuild.build.IncludeDirs: 'inc',
     mesonbuild.build.Jar: 'jar',
     mesonbuild.interpreterbase.disabler.Disabler: 'disabler',
+    mesonbuild.build.SharedLibrary: 'lib',
+    mesonbuild.build.StaticLibrary: 'lib',
+    # mesonbuild.build.SharedModule: 'lib',
+    mesonbuild.interpreter.primitives.range.RangeHolder: 'range',
+    mesonbuild.interpreter.interpreterobjects.RunProcess: 'runresult',
+    mesonbuild.build.BothLibraries: 'both_libs',
+    mesonbuild.build.Generator: 'generator',
+    mesonbuild.build.RunTarget: 'run_tgt',
+    mesonbuild.build.AliasTarget: 'alias_tgt',
+    mesonbuild.compilers.compilers.RunResult: 'runresult',
+    mesonbuild.dependencies.base.ExternalLibrary: 'dep',
     bool: 'bool',
     int: 'int',
     str: 'str',
     list: 'list',
     dict: 'dict',
     object: 'any',
+    mesonbuild.interpreterbase.baseobjects.MesonInterpreterObject: 'meson',
+    typing.Any: 'any',
+    mesonbuild.mesonlib.universal.HoldableObject: 'any',
+    type(None): 'void',
+    mesonbuild.interpreter.interpreterobjects.SubprojectHolder: 'subproject',
+    mesonbuild.build.StructuredSources: 'structed_src',
+    mesonbuild.modules.ExtensionModule: 'module',
+    mesonbuild.modules.NewExtensionModule: 'module',
+    mesonbuild.modules.NotFoundExtensionModule: 'module',
+    mesonbuild.programs.OverrideProgram: 'external_program', # technically this could be other things too, like file or exe
+
+    # These objects are the return types for various install_ commands
+    mesonbuild.build.Data: 'void',
+    mesonbuild.build.Headers: 'void',
+    mesonbuild.build.Man: 'void',
+    mesonbuild.build.InstallDir: 'void',
+    mesonbuild.build.SymlinkData: 'void',
+    mesonbuild.interpreter.primitives.string.MesonVersionString: 'str',
 }
 
-def handle_annotated_kwargs(n, t, f, kwargs):
-    def type_to_doctype(t, n=0):
-        pre = ' '*(n*2)
-        o = typing.get_origin(t)
-        a = typing.get_args(t)
+def _annotated_type_to_doctype(t):
+    o = typing.get_origin(t)
+    a = typing.get_args(t)
 
-        if o is None:
-            o = t
+    if o is None:
+        o = t
 
-        s = ""
-        if o is list:
-            assert a is not None
-            return f"list[{type_to_doctype(a, n+1)}]"
-        if o is dict:
-            assert(len(a) == 2)
-            _kt = a[0] # should always be str
-            kv = a[1]
-            return f"dict[{type_to_doctype(kv)}]"
-        elif o is typing.Union:
-            assert a is not None
-            # NoneType gets in there for optionals
-            union = [type_to_doctype(x, n+1) for x in a if x is not type(None)]
-            union.sort()
-            return "|".join(union)
-        elif type(o) is tuple:
-            return type_to_doctype(o[0], n+1)
-        elif o in MESON_OBJECTS_TO_TYPE:
-            return MESON_OBJECTS_TO_TYPE[o]
-        elif type(o) is typing.ForwardRef:
-            return {
-                    'File': 'file',
-            }[o.__forward_arg__]
-        elif o is typing.Literal:
-            return str(a)
-        else:
-            return "unknown: <" + str(o) + ">"
+    if o is list:
+        a = _annotated_type_to_doctype(a)
+        a = [a] if not isinstance(a, list) else a
+        return ('list', a)
+    if o is dict:
+        assert(len(a) == 2)
+        _kt = a[0] # should always be str
+        kv = a[1]
+        a = _annotated_type_to_doctype(kv)
+        a = [a] if not isinstance(a, list) else a
+        return ('dict', a)
+    elif o is typing.Union:
+        # NoneType gets in there for optionals
+        union = [_annotated_type_to_doctype(x) for x in a if x is not type(None)]
+        return union
+    elif type(o) is tuple:
+        return _annotated_type_to_doctype(o[0])
+    elif o in MESON_OBJECTS_TO_TYPE:
+        return MESON_OBJECTS_TO_TYPE[o]
+    elif type(o) is typing.ForwardRef:
+        return {
+                'File': 'file',
+        }[o.__forward_arg__]
+    elif o is typing.Literal:
+        return str(a)
+    else:
+        return f"unknown: {o}"
 
+def annotated_type_to_doctype(t):
+    a = _annotated_type_to_doctype(t)
+    return [a] if not isinstance(a, list) else a
+
+def handle_annotated_kwargs(n, f, kwargs):
     if not kwargs:
         return
 
@@ -123,7 +260,7 @@ def handle_annotated_kwargs(n, t, f, kwargs):
 
     types = []
     for k, v in annotations.items():
-        types.append((k, type_to_doctype(v)))
+        types.append((k, annotated_type_to_doctype(v)))
 
     def key_func(v):
         return v[0]
@@ -140,27 +277,21 @@ def container_type_to_doctype(types_tuple):
 
     def type_name(o):
         if isinstance(o, list) or isinstance(o, tuple):
-            return "|".join([type_name(x) for x in o])
+            return [type_name(x) for x in o]
         elif o in MESON_OBJECTS_TO_TYPE:
             return MESON_OBJECTS_TO_TYPE[o]
         else:
-            return f"unknown <{o}>"
+            return f"unknown {o}"
 
     def container_description(cont):
-        """Human readable description of this container type.
-
-        :return: string to be printed
-        """
         container = 'dict' if cont.container is dict else 'list'
         if isinstance(cont.contains, tuple):
             l = [type_name(t) for t in cont.contains]
-            l.sort()
-            contains = '|'.join(l)
+            contains = l
         else:
-            contains = type_name(cont.contains)
+            contains = [type_name(cont.contains)]
 
-        s = f'{container}[{contains}]'
-        return s
+        return (container, contains)
 
     candidates = []
     for t in types_tuple:
@@ -171,25 +302,27 @@ def container_type_to_doctype(types_tuple):
             candidates.append(container_description(t))
         else:
             candidates.append(type_name(t))
-    candidates.sort()
-    return "|".join(candidates)
 
-def handle_typed_posargs(n, t, f, args):
+    return candidates
+
+def handle_typed_posargs(n, f, args):
+    ret = {}
     for k, v in args.items():
         if not v:
+            ret[k] = None
             continue
 
-        print('  ' + k + ':')
         if k == 'posargs':
-            assert isinstance(v, tuple)
             # posargs are a splat variable
+            assert isinstance(v, tuple)
         else:
             v = [v] if not isinstance(v, list) else v
 
-        for a in v:
-            print('    ' + container_type_to_doctype(a))
 
-def handle_typed_kwargs(n, t, f, kwargs):
+        ret[k] = [container_type_to_doctype(a) for a in v]
+    return ret
+
+def handle_typed_kwargs(n, f, kwargs):
     kwargs_list = []
     for k in kwargs:
         kwargs_list.append((k.name, k))
@@ -202,7 +335,7 @@ def handle_typed_kwargs(n, t, f, kwargs):
 
     return ret
 
-def handle_posargs(n, t, f, decorators):
+def handle_posargs(n, f, decorators):
     has_posargs = True
     posargs = None
     for d, first_arg in decorators:
@@ -212,15 +345,15 @@ def handle_posargs(n, t, f, decorators):
             posargs = typed_pos_args_map[first_arg]
 
     if not has_posargs:
-        return
+        return None
 
     if posargs:
-        handle_typed_posargs(n, t, f, posargs)
-        return
+        return handle_typed_posargs(n, f, posargs)
 
     untyped_posargs.append(n)
+    return None
 
-def handle_kwargs(n, t, f, decorators):
+def handle_kwargs(n, f, decorators):
     has_kwargs = True
     kwargs = None
     for d, first_arg in decorators:
@@ -233,28 +366,199 @@ def handle_kwargs(n, t, f, decorators):
         return None
 
     if kwargs:
-        return handle_typed_kwargs(n, t, f, kwargs)
+        return handle_typed_kwargs(n, f, kwargs)
 
-    kwargs = t.get('kwargs')
-    if kwargs:
-        return handle_annotated_kwargs(n, t, f, kwargs)
+    # no function has kwargs that are annotated but not typed_kwargs
+    # kwargs = t.get('kwargs')
+    # if kwargs:
+    #     return handle_annotated_kwargs(n, f, kwargs)
 
     untyped_kwargs.append(n)
     return None
 
-def main():
-    types = interpreter.interpreter.get_types()
-    types.sort(key=lambda x: x[0])
-    for n, t, f in types:
-        print(n)
+def gather_function_info():
+    class Mock(mesonbuild.mesonlib.universal.HoldableObject):
+        def __getattr__(self, attr):
+            try:
+                return super(Mock, self).__getattr__(attr)
+            except AttributeError:
+                return lambda *x: None
 
+    class Dummy(Interpreter):
+        def __init__(self):
+            self.funcs = {}
+            self.holder_map = {}
+            self.bound_holder_map = {}
+
+            self.subproject = None
+            self.environment = None
+
+        def __getattr__(self,attr):
+            try:
+                return super(Dummy, self).__getattr__(attr)
+            except AttributeError:
+                return None
+
+    dummy_interpreter = Dummy()
+    dummy_interpreter.build_func_dict()
+    dummy_interpreter.build_holder_map()
+
+    # These functions are defined in the interpreter, but they aren't actually
+    # valid, they exist to help nudge users with error messages
+    exclude_funcs = [
+            'find_library',
+            'gettext',
+            'option',
+    ]
+
+    funcs = [
+        (f, dummy_interpreter.funcs[f])
+        for f in dummy_interpreter.funcs
+        if f not in exclude_funcs
+    ]
+    funcs.sort(key=lambda x: x[0])
+
+    exclude_objects = [
+        # exclude all build_tgt objects
+        mesonbuild.build.SharedLibrary,
+        mesonbuild.build.StaticLibrary,
+        mesonbuild.build.Jar,
+        mesonbuild.build.Executable,
+        mesonbuild.build.BothLibraries,
+
+        mesonbuild.dependencies.base.ExternalLibrary,
+        mesonbuild.interpreter.primitives.string.MesonVersionString,
+    ]
+
+    objects = [
+        (MESON_OBJECTS_TO_TYPE[t], h)
+        for t, h in dummy_interpreter.holder_map.items()
+        if t in MESON_OBJECTS_TO_TYPE and t not in exclude_objects
+    ]
+
+    objects.append(('meson', MesonMain))
+    objects.append(('dep', OBJ.DependencyHolder))
+    objects.append(('compiler', mesonbuild.interpreter.compiler.CompilerHolder))
+    objects.append(('external_program', OBJ.ExternalProgramHolder))
+    objects.append(('build_machine', OBJ.MachineHolder))
+
+    objects = [
+        (t, list(holder(Mock(), dummy_interpreter).methods.items()))
+        for t, holder in objects
+    ]
+
+    build_tgt_methods = OBJ.SharedLibraryHolder(Mock(), dummy_interpreter).methods
+
+    objects.append(('build_tgt', list(build_tgt_methods.items())))
+    objects.append(('module', list(mesonbuild.modules.NewExtensionModule().methods.items())))
+    objects.append(('subproject', list(OBJ.SubprojectHolder(OBJ.NullSubprojectInterpreter, subdir='asdf').methods.items())))
+    objects.append(('both_libs', [
+        m
+        for m in OBJ.BothLibrariesHolder(Mock(), dummy_interpreter).methods.items()
+        if m[0] not in build_tgt_methods
+    ]))
+
+    objects.sort(key=lambda x: x[0])
+
+    for t, methods in objects:
+        methods.sort(key=lambda x: x[0])
+
+        for n, f in methods:
+            n = f"{t}.{n}"
+            funcs.append((n, f))
+
+    funcinfo = {}
+    for n, f in funcs:
+        assert n not in funcinfo
+
+        annotations = get_type_annotations(f)
         decorators = get_decorators(f)
-        handle_posargs(n, t, f, decorators)
-        kwargs = handle_kwargs(n, t, f, decorators)
-        if kwargs:
-            print('  kwargs:')
-            for k, t in kwargs:
-                print(f'    {k}: {t}')
+
+        info = {}
+        posargs = handle_posargs(n, f, decorators)
+        if posargs:
+            info.update(posargs)
+
+        info['kwargs'] = handle_kwargs(n, f, decorators)
+
+        ret = annotations.get('return')
+        if ret:
+            ret = [annotated_type_to_doctype(ret)]
+        info['returns'] = ret
+
+        funcinfo[n] = info
+
+    return funcinfo
+
+def clean_up_type(t):
+    assert isinstance(t, list)
+
+    def type_sort(v):
+        if isinstance(v, tuple):
+            return v[0]
+        else:
+            assert isinstance(v, str)
+            return v
+
+    cleaned = []
+    for v in t:
+        if isinstance(v, tuple):
+            v = (v[0], clean_up_type(v[1]))
+        elif v in cleaned:
+            continue
+
+        cleaned.append(v)
+    cleaned.sort(key=type_sort)
+
+    if 'any' in cleaned:
+        return ['any']
+
+    return cleaned
+
+def clean_function_info(function_info):
+    ret = {}
+    for n, info in function_info.items():
+        new_info = {}
+        for k, v in info.items():
+            if not v:
+                new_info[k] = []
+                continue
+
+            vals = []
+            for i in v:
+                if isinstance(i, tuple):
+                    vals.append((i[0], clean_up_type(i[1])))
+                else:
+                    vals.append(clean_up_type(i))
+
+            new_info[k] = vals
+        ret[n] = new_info
+
+    return ret
+
+def assemble_type(t):
+    if type(t) is list:
+        return "|".join(assemble_type(x) for x in t)
+    elif type(t) is tuple:
+        return t[0] + '[' + assemble_type(t[1]) + ']'
+    else:
+        return t
+
+def main():
+    for n, info in clean_function_info(gather_function_info()).items():
+        print(n)
+        for k, v in info.items():
+            if not v:
+                continue
+
+            print(f'  {k}:')
+            for i in v:
+                if isinstance(i, tuple):
+                    t = assemble_type(i[1])
+                    print(f'    {i[0]}: {t}')
+                else:
+                    t = assemble_type(i)
+                    print(f'    {t}')
 
     # print('untyped posargs:', untyped_posargs)
     # print('untyped kwargs:', untyped_kwargs)

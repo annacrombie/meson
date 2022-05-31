@@ -9,6 +9,7 @@ from .model import (
     PosArg,
     VarArgs,
     Kwarg,
+    ObjectType,
 )
 
 import typing as T
@@ -81,8 +82,17 @@ class GeneratorTypes(GeneratorBase):
             print(f"    {t}")
 
 
-    def generate_function(self, f: Function):
-        print(f.name)
+    def function_name(self, f: Function, o: Object = None) -> str:
+        name = ""
+        if o is not None:
+            name += f"{o.name}."
+
+        name += f.name
+        return name
+
+    def generate_function(self, f: Function, obj: Object = None):
+        print(self.function_name(f, obj))
+
         if f.posargs:
             print('  posargs:')
             self.print_types(f.posargs)
@@ -100,10 +110,19 @@ class GeneratorTypes(GeneratorBase):
             print('  kwargs:')
         for kwarg in kwargs:
             k = kwarg.name
-            # print(f"parsing {kwarg.type.raw}")
             t = self.assemble_type(self.parse_type(kwarg.type.raw))
             print(f"    {k}: {t}")
 
+        print('  returns:')
+        print('    ' + self.assemble_type(self.parse_type(f.returns.raw)))
+
     def generate(self):
         for f in self.sorted_and_filtered(self.functions):
-            self.generate_function(f)
+            self.generate_function(f, None)
+
+        for obj in self.sorted_and_filtered(self.objects):
+            for f in self.sorted_and_filtered(obj.methods):
+                if not self.enable_modules and (obj.obj_type == ObjectType.MODULE or obj.defined_by_module is not None):
+                    continue
+
+                self.generate_function(f, obj)
