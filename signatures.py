@@ -222,6 +222,9 @@ def _annotated_type_to_doctype(t):
         a = [a] if not isinstance(a, list) else a
         return ('list', a)
     if o is dict:
+        if not a:
+            return ('dict', ['any'])
+
         assert(len(a) == 2)
         _kt = a[0] # should always be str
         kv = a[1]
@@ -233,7 +236,10 @@ def _annotated_type_to_doctype(t):
         union = [_annotated_type_to_doctype(x) for x in a if x is not type(None)]
         return union
     elif type(o) is tuple:
-        return _annotated_type_to_doctype(o[0])
+        if len(o):
+            return _annotated_type_to_doctype(o[0])
+        else:
+            return []
     elif o in MESON_OBJECTS_TO_TYPE:
         return MESON_OBJECTS_TO_TYPE[o]
     elif type(o) is typing.ForwardRef:
@@ -271,6 +277,36 @@ def handle_annotated_kwargs(n, f, kwargs):
     for k, dt in types:
         ret.append((k, dt))
     return ret
+
+def is_optional(t):
+    # TODO
+    return False
+
+def handle_annotated_posargs(n, f, posargs):
+    if not posargs:
+        return
+
+    o = typing.get_origin(posargs)
+    if o is not tuple:
+        a = (posargs,)
+    else:
+        a = typing.get_args(posargs)
+
+    pos = []
+    opt = []
+    for v in a:
+        if is_optional(v):
+            opt.append(annotated_type_to_doctype(v))
+        else:
+            pos.append(annotated_type_to_doctype(v))
+
+    print(pos)
+
+    return {
+        'posargs': pos if pos else None,
+        'optargs': opt if opt else None,
+    }
+
 
 def container_type_to_doctype(types_tuple):
     types_tuple = types_tuple if isinstance(types_tuple, tuple) else (types_tuple,)
@@ -335,7 +371,7 @@ def handle_typed_kwargs(n, f, kwargs):
 
     return ret
 
-def handle_posargs(n, f, decorators):
+def handle_posargs(n, f, annotations, decorators):
     has_posargs = True
     posargs = None
     for d, first_arg in decorators:
@@ -347,13 +383,18 @@ def handle_posargs(n, f, decorators):
     if not has_posargs:
         return None
 
+    # if annotations:
+    #     annotated_posargs = annotations.get('args')
+    #     if annotated_posargs:
+    #         return handle_annotated_posargs(n, f, annotated_posargs)
+
     if posargs:
         return handle_typed_posargs(n, f, posargs)
 
     untyped_posargs.append(n)
     return None
 
-def handle_kwargs(n, f, decorators):
+def handle_kwargs(n, f, annotations, decorators):
     has_kwargs = True
     kwargs = None
     for d, first_arg in decorators:
@@ -365,13 +406,13 @@ def handle_kwargs(n, f, decorators):
     if not has_kwargs:
         return None
 
+    # if annotations:
+    #     annotated_kwargs = annotations.get('kwargs') or annotations.get('kwargs_')
+    #     if annotated_kwargs :
+    #         return handle_annotated_kwargs(n, f, annotated_kwargs)
+
     if kwargs:
         return handle_typed_kwargs(n, f, kwargs)
-
-    # no function has kwargs that are annotated but not typed_kwargs
-    # kwargs = t.get('kwargs')
-    # if kwargs:
-    #     return handle_annotated_kwargs(n, f, kwargs)
 
     untyped_kwargs.append(n)
     return None
@@ -475,11 +516,11 @@ def gather_function_info():
         decorators = get_decorators(f)
 
         info = {}
-        posargs = handle_posargs(n, f, decorators)
+        posargs = handle_posargs(n, f, annotations, decorators)
         if posargs:
             info.update(posargs)
 
-        info['kwargs'] = handle_kwargs(n, f, decorators)
+        info['kwargs'] = handle_kwargs(n, f, annotations, decorators)
 
         ret = annotations.get('return')
         if ret:
