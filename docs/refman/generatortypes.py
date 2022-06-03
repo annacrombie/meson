@@ -32,7 +32,7 @@ class GeneratorTypes(GeneratorBase):
                 (n, sub) = self._parse_type(t[i+1:], in_container=True)
                 parsed.append((name, sub,))
                 name = ""
-                i += n
+                i += n + 1
                 continue
             elif c == ']':
                 if name:
@@ -42,7 +42,8 @@ class GeneratorTypes(GeneratorBase):
                 i += 1
                 continue
             elif c == '|':
-                parsed.append(name)
+                if name:
+                    parsed.append(name)
                 name = ""
             else:
                 name += c
